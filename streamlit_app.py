@@ -349,18 +349,19 @@ def generate_co_po_mapping_simple(co_descriptions: List[str], po_descriptions: L
                 similarity_matrix = cosine_similarity(co_embeddings, po_embeddings)
                 
                 # Convert similarities to weights (0-3)
-                # Using more lenient thresholds to get more 2s and 3s
+                # Optimized thresholds based on expert benchmark analysis
+                # 0→1: 0.265, 1→2: 0.397, 2→3: 0.518
                 for i in range(len(co_descriptions)):
                     row = []
                     for j in range(len(po_descriptions)):
                         sim = similarity_matrix[i][j]
                         
-                        # Much more lenient thresholds - aim for majority 2s
-                        if sim < 0.15:
+                        # Optimized thresholds for best alignment with expert ratings
+                        if sim < 0.265:
                             weight = 0
-                        elif sim < 0.35:
+                        elif sim < 0.397:
                             weight = 1
-                        elif sim < 0.55:
+                        elif sim < 0.518:
                             weight = 2
                         else:
                             weight = 3
@@ -381,12 +382,12 @@ def generate_co_po_mapping_simple(co_descriptions: List[str], po_descriptions: L
         for po_data in po_processed:
             similarity = calculate_semantic_similarity(co_data, po_data)
             
-            # More lenient thresholds for fallback too
-            if similarity < 0.15:
+            # Optimized thresholds for fallback too
+            if similarity < 0.265:
                 weight = 0
-            elif similarity < 0.30:
+            elif similarity < 0.397:
                 weight = 1
-            elif similarity < 0.50:
+            elif similarity < 0.518:
                 weight = 2
             else:
                 weight = 3
