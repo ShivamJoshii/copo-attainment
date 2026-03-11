@@ -13,6 +13,25 @@ import re
 import numpy as np
 import os
 
+# Sentence embeddings for semantic similarity
+try:
+    from sentence_transformers import SentenceTransformer
+    from sklearn.metrics.pairwise import cosine_similarity
+    EMBEDDINGS_AVAILABLE = True
+except ImportError:
+    EMBEDDINGS_AVAILABLE = False
+
+# Cache the model at module level
+_embedding_model = None
+
+def get_embedding_model():
+    """Lazy load the sentence transformer model"""
+    global _embedding_model
+    if _embedding_model is None and EMBEDDINGS_AVAILABLE:
+        # Use a lightweight but effective model
+        _embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+    return _embedding_model
+
 # Page configuration
 st.set_page_config(
     page_title="CO-PO Attainment System",
@@ -312,26 +331,62 @@ def calculate_semantic_similarity(co_processed: dict, po_processed: dict) -> flo
 
 def generate_co_po_mapping_simple(co_descriptions: List[str], po_descriptions: List[str]) -> List[List[int]]:
     """
-    Enhanced CO-PO mapping using semantic similarity with domain knowledge.
+    Enhanced CO-PO mapping using sentence embeddings + cosine similarity.
+    Falls back to rule-based approach if embeddings not available.
     """
     matrix = []
     
-    # Preprocess all descriptions
+    # Try sentence embeddings first
+    if EMBEDDINGS_AVAILABLE and len(co_descriptions) > 0 and len(po_descriptions) > 0:
+        try:
+            model = get_embedding_model()
+            if model:
+                # Generate embeddings for all descriptions
+                co_embeddings = model.encode(co_descriptions, convert_to_numpy=True)
+                po_embeddings = model.encode(po_descriptions, convert_to_numpy=True)
+                
+                # Calculate cosine similarity matrix
+                similarity_matrix = cosine_similarity(co_embeddings, po_embeddings)
+                
+                # Convert similarities to weights (0-3)
+                # Using more lenient thresholds to get more 2s and 3s
+                for i in range(len(co_descriptions)):
+                    row = []
+                    for j in range(len(po_descriptions)):
+                        sim = similarity_matrix[i][j]
+                        
+                        # Much more lenient thresholds - aim for majority 2s
+                        if sim < 0.15:
+                            weight = 0
+                        elif sim < 0.35:
+                            weight = 1
+                        elif sim < 0.55:
+                            weight = 2
+                        else:
+                            weight = 3
+                        
+                        row.append(weight)
+                    matrix.append(row)
+                
+                return matrix
+        except Exception as e:
+            st.warning(f"Embedding-based mapping failed, falling back to rule-based: {e}")
+    
+    # Fallback to rule-based approach
     co_processed = [preprocess_text(desc) for desc in co_descriptions]
     po_processed = [preprocess_text(desc) for desc in po_descriptions]
     
     for co_data in co_processed:
         row = []
         for po_data in po_processed:
-            # Calculate semantic similarity
             similarity = calculate_semantic_similarity(co_data, po_data)
             
-            # Convert to weight (0-3) with adjusted thresholds
+            # More lenient thresholds for fallback too
             if similarity < 0.15:
                 weight = 0
-            elif similarity < 0.35:
+            elif similarity < 0.30:
                 weight = 1
-            elif similarity < 0.6:
+            elif similarity < 0.50:
                 weight = 2
             else:
                 weight = 3
