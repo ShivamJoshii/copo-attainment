@@ -172,31 +172,166 @@ def percentage_to_level(percentage: float) -> int:
     else:
         return 0
 
-# ============ NLP MAPPING (SIMPLIFIED) ============
+# ============ NLP MAPPING (ENHANCED) ============
+
+# Domain-specific keywords for engineering/business education
+DOMAIN_KEYWORDS = {
+    # Technical/Engineering
+    'technical': ['technical', 'engineering', 'system', 'design', 'analysis', 'analyze', 'model', 
+                  'modeling', 'simulation', 'algorithm', 'implementation', 'development', 'architecture'],
+    
+    # Problem Solving
+    'problem_solving': ['problem', 'solve', 'solution', 'troubleshoot', 'debug', 'optimize', 
+                        'improve', 'evaluate', 'assess', 'diagnose', 'resolve'],
+    
+    # Programming/Computing
+    'computing': ['program', 'programming', 'code', 'coding', 'software', 'application', 
+                  'database', 'data', 'computation', 'computing', 'automation', 'script'],
+    
+    # Communication
+    'communication': ['communicate', 'communication', 'present', 'presentation', 'report', 
+                      'document', 'documentation', 'write', 'writing', 'explain', 'describe'],
+    
+    # Teamwork/Collaboration
+    'teamwork': ['team', 'collaborate', 'collaboration', 'group', 'cooperate', 'cooperation',
+                 'coordinate', 'coordination', 'interpersonal', 'leadership', 'manage'],
+    
+    # Ethics/Professionalism
+    'ethics': ['ethic', 'ethical', 'professional', 'professionalism', 'responsibility', 
+               'responsible', 'integrity', 'safety', 'sustainability', 'sustainable'],
+    
+    # Learning/Research
+    'learning': ['learn', 'learning', 'research', 'investigate', 'study', 'explore', 
+                 'discover', 'innovation', 'innovate', 'adapt', 'lifelong'],
+    
+    # Business/Management
+    'business': ['business', 'management', 'project', 'planning', 'strategy', 'strategic',
+                 'finance', 'financial', 'economic', 'economics', 'marketing', 'entrepreneurship'],
+    
+    # Mathematics
+    'math': ['mathematics', 'mathematical', 'math', 'calculation', 'calculate', 'formula',
+             'equation', 'statistical', 'statistics', 'probability', 'numerical'],
+    
+    # Science
+    'science': ['science', 'scientific', 'experiment', 'experimental', 'laboratory', 'lab',
+                'empirical', 'hypothesis', 'theory', 'theoretical', 'physics', 'chemistry']
+}
+
+# Bloom's taxonomy verbs mapped to cognitive levels
+BLOOMS_TAXONOMY = {
+    'remember': ['define', 'identify', 'list', 'name', 'recall', 'recognize', 'state', 'describe'],
+    'understand': ['explain', 'interpret', 'classify', 'summarize', 'paraphrase', 'compare', 'contrast'],
+    'apply': ['apply', 'use', 'demonstrate', 'execute', 'implement', 'solve', 'calculate', 'compute'],
+    'analyze': ['analyze', 'differentiate', 'organize', 'compare', 'contrast', 'distinguish', 'examine'],
+    'evaluate': ['evaluate', 'assess', 'critique', 'judge', 'test', 'recommend', 'justify', 'validate'],
+    'create': ['design', 'develop', 'create', 'formulate', 'construct', 'program', 'build', 'invent']
+}
+
+def preprocess_text(text: str) -> dict:
+    """
+    Enhanced text preprocessing with domain keyword extraction.
+    Returns a dict with processed tokens, domain categories, and Bloom's levels.
+    """
+    # Clean and normalize
+    text_clean = re.sub(r'[^\w\s]', ' ', text.lower())
+    words = set(re.findall(r'\b[a-z]{3,}\b', text_clean))
+    
+    # Extract domain categories present in text
+    domain_matches = {}
+    for category, keywords in DOMAIN_KEYWORDS.items():
+        matches = words & set(keywords)
+        if matches:
+            domain_matches[category] = len(matches)
+    
+    # Detect Bloom's taxonomy levels
+    bloom_levels = set()
+    for level, verbs in BLOOMS_TAXONOMY.items():
+        if words & set(verbs):
+            bloom_levels.add(level)
+    
+    # Extract key phrases (2-3 word combinations)
+    text_words = re.findall(r'\b[a-z]+\b', text_clean)
+    phrases = set()
+    for i in range(len(text_words) - 1):
+        phrases.add(f"{text_words[i]} {text_words[i+1]}")
+        if i < len(text_words) - 2:
+            phrases.add(f"{text_words[i]} {text_words[i+1]} {text_words[i+2]}")
+    
+    return {
+        'words': words,
+        'domain_matches': domain_matches,
+        'bloom_levels': bloom_levels,
+        'phrases': phrases,
+        'raw_text': text_clean
+    }
+
+def calculate_semantic_similarity(co_processed: dict, po_processed: dict) -> float:
+    """
+    Calculate semantic similarity between CO and PO using multiple factors.
+    """
+    scores = []
+    
+    # 1. Word overlap (Jaccard) - baseline
+    word_intersection = len(co_processed['words'] & po_processed['words'])
+    word_union = len(co_processed['words'] | po_processed['words'])
+    word_similarity = word_intersection / word_union if word_union > 0 else 0
+    scores.append(word_similarity * 0.3)  # 30% weight
+    
+    # 2. Domain category overlap - strong indicator
+    co_domains = set(co_processed['domain_matches'].keys())
+    po_domains = set(po_processed['domain_matches'].keys())
+    if co_domains and po_domains:
+        domain_intersection = len(co_domains & po_domains)
+        domain_union = len(co_domains | po_domains)
+        domain_similarity = domain_intersection / domain_union if domain_union > 0 else 0
+        
+        # Boost score if multiple domains match
+        if domain_intersection >= 2:
+            domain_similarity = min(1.0, domain_similarity * 1.3)
+        scores.append(domain_similarity * 0.4)  # 40% weight
+    else:
+        scores.append(0)
+    
+    # 3. Bloom's taxonomy alignment
+    co_blooms = co_processed['bloom_levels']
+    po_blooms = po_processed['bloom_levels']
+    if co_blooms and po_blooms:
+        bloom_overlap = len(co_blooms & po_blooms)
+        bloom_similarity = bloom_overlap / max(len(co_blooms), len(po_blooms)) if max(len(co_blooms), len(po_blooms)) > 0 else 0
+        scores.append(bloom_similarity * 0.2)  # 20% weight
+    else:
+        scores.append(0)
+    
+    # 4. Phrase overlap - captures semantic meaning better
+    phrase_intersection = len(co_processed['phrases'] & po_processed['phrases'])
+    phrase_union = len(co_processed['phrases'] | po_processed['phrases'])
+    phrase_similarity = phrase_intersection / phrase_union if phrase_union > 0 else 0
+    scores.append(phrase_similarity * 0.1)  # 10% weight
+    
+    return sum(scores)
+
 def generate_co_po_mapping_simple(co_descriptions: List[str], po_descriptions: List[str]) -> List[List[int]]:
     """
-    Simplified CO-PO mapping using keyword matching.
+    Enhanced CO-PO mapping using semantic similarity with domain knowledge.
     """
     matrix = []
     
-    for co_desc in co_descriptions:
+    # Preprocess all descriptions
+    co_processed = [preprocess_text(desc) for desc in co_descriptions]
+    po_processed = [preprocess_text(desc) for desc in po_descriptions]
+    
+    for co_data in co_processed:
         row = []
-        co_words = set(re.findall(r'\b[a-z]+\b', co_desc.lower()))
-        
-        for po_desc in po_descriptions:
-            po_words = set(re.findall(r'\b[a-z]+\b', po_desc.lower()))
+        for po_data in po_processed:
+            # Calculate semantic similarity
+            similarity = calculate_semantic_similarity(co_data, po_data)
             
-            # Calculate Jaccard similarity
-            intersection = len(co_words & po_words)
-            union = len(co_words | po_words)
-            similarity = intersection / union if union > 0 else 0
-            
-            # Convert to weight (0-3)
-            if similarity < 0.1:
+            # Convert to weight (0-3) with adjusted thresholds
+            if similarity < 0.15:
                 weight = 0
-            elif similarity < 0.25:
+            elif similarity < 0.35:
                 weight = 1
-            elif similarity < 0.5:
+            elif similarity < 0.6:
                 weight = 2
             else:
                 weight = 3
@@ -625,6 +760,14 @@ def render_create_course():
             key = (m['co_code'], m['po_code'])
             matrix_data[key] = m['weight']
         
+        # Display header row first
+        header_cols = st.columns(len(pos) + 1)
+        header_cols[0].write("**CO \\ PO**")
+        for j, po in enumerate(pos):
+            header_cols[j + 1].write(f"**{po['po_code']}**")
+        
+        st.divider()
+        
         edited_weights = {}
         for co in cos:
             cols = st.columns(len(pos) + 1)
@@ -638,11 +781,6 @@ def render_create_course():
                     label_visibility="collapsed",
                     key=f"map_{co['id']}_{po['id']}"
                 )
-        
-        header_cols = st.columns(len(pos) + 1)
-        header_cols[0].write("")
-        for j, po in enumerate(pos):
-            header_cols[j + 1].write(f"**{po['po_code']}**")
         
         col1, col2 = st.columns(2)
         with col1:
